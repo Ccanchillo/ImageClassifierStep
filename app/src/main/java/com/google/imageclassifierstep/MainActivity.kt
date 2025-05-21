@@ -35,9 +35,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             Scaffold(
                 topBar = {
-                    TopAppBar(
-                        title = { Text("Imagen a clasificar") },
-                        colors = TopAppBarDefaults.topAppBarColors()
+                    CenterAlignedTopAppBar(
+                        title = { Text("ETIQUETACIÓN") },
+                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors()
                     )
                 }
             ) { innerPadding ->
@@ -81,16 +81,18 @@ fun Content(modifier: Modifier = Modifier) {
         HorizontalDivider(thickness = 1.dp)
         Spacer(modifier = Modifier.height(8.dp))
 
-        Text(
-            text = "FLORES",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
+        if (bitmap == null) {
+            Text(
+                text = "SELECCIONE UNA IMAGEN",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
 
         bitmap?.let {
             Image(
                 bitmap = it.asImageBitmap(),
-                contentDescription = "Imagen a clasificar",
+                contentDescription = "IMAGEN SELECCIONADA",
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(250.dp)
@@ -102,30 +104,11 @@ fun Content(modifier: Modifier = Modifier) {
         Button(onClick = {
             launcher.launch("image/*")
         }) {
-            Text("Seleccionar imagen")
+            Text("IMAGEN")
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        Button(onClick = {
-            bitmap?.let { bmp ->
-                val image = InputImage.fromBitmap(bmp, 0)
-                val labeler = ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS)
-                labeler.process(image)
-                    .addOnSuccessListener { labels ->
-                        resultText = labels.joinToString("\n") {
-                            "${it.text}: ${(it.confidence * 100).toInt()}%"
-                        }
-                    }
-                    .addOnFailureListener { e ->
-                        resultText = "Error: ${e.localizedMessage}"
-                    }
-            }
-        }) {
-            Text("Etiquetar")
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
 
         Button(onClick = {
             bitmap?.let { bmp ->
@@ -173,7 +156,7 @@ fun Content(modifier: Modifier = Modifier) {
                     }
             }
         }) {
-            Text("Etiquetar y traducir")
+            Text("Etiquetar")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
