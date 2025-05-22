@@ -3,6 +3,10 @@ package com.google.imageclassifierstep
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
@@ -12,6 +16,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -50,6 +55,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun Content(modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    var resultText by remember { mutableStateOf("Presiona el botón para clasificar.") }
     val imageUri = remember { mutableStateOf<Uri?>(null) }
     val bitmap = remember(imageUri.value) {
         imageUri.value?.let { uri ->
@@ -67,9 +73,8 @@ fun Content(modifier: Modifier = Modifier) {
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         imageUri.value = uri
+        resultText = ""
     }
-
-    var resultText by remember { mutableStateOf("Presiona el botón para clasificar.") }
 
     Column(
         modifier = modifier
@@ -78,10 +83,11 @@ fun Content(modifier: Modifier = Modifier) {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        HorizontalDivider(thickness = 1.dp)
-        Spacer(modifier = Modifier.height(8.dp))
-
-        if (bitmap == null) {
+        AnimatedVisibility(
+            visible = bitmap == null,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
             Text(
                 text = "SELECCIONE UNA IMAGEN",
                 style = MaterialTheme.typography.titleMedium,
@@ -89,14 +95,19 @@ fun Content(modifier: Modifier = Modifier) {
             )
         }
 
-        bitmap?.let {
-            Image(
-                bitmap = it.asImageBitmap(),
-                contentDescription = "IMAGEN SELECCIONADA",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(250.dp)
-            )
+        Crossfade(
+            targetState = bitmap,
+            animationSpec = tween(durationMillis = 600) // puedes ajustar la duración
+        ) { currentBitmap ->
+            currentBitmap?.let {
+                Image(
+                    bitmap = it.asImageBitmap(),
+                    contentDescription = "IMAGEN SELECCIONADA",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(250.dp)
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -160,6 +171,8 @@ fun Content(modifier: Modifier = Modifier) {
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        Text(text = resultText)
+        Crossfade(targetState = resultText) { text ->
+            Text(text = text)
+        }
     }
 }
