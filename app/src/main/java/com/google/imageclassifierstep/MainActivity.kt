@@ -1,6 +1,7 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.google.imageclassifierstep
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.animation.Crossfade
@@ -11,6 +12,7 @@ import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -55,7 +57,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun Content(modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    var mode by remember { mutableStateOf("none") }
     var resultText by remember { mutableStateOf("Presiona el botón para clasificar.") }
+    var folderUri by remember { mutableStateOf<Uri?>(null) }
+    val contentResolver = context.contentResolver
     val imageUri = remember { mutableStateOf<Uri?>(null) }
     val bitmap = remember(imageUri.value) {
         imageUri.value?.let { uri ->
@@ -74,6 +79,13 @@ fun Content(modifier: Modifier = Modifier) {
     ) { uri: Uri? ->
         imageUri.value = uri
         resultText = ""
+    }
+
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        folderUri = uri
+        resultText = "Carpeta seleccionada: ${uri?.path}"
     }
 
     Column(
@@ -97,7 +109,7 @@ fun Content(modifier: Modifier = Modifier) {
 
         Crossfade(
             targetState = bitmap,
-            animationSpec = tween(durationMillis = 600) // puedes ajustar la duración
+            animationSpec = tween(durationMillis = 600)
         ) { currentBitmap ->
             currentBitmap?.let {
                 Image(
@@ -120,11 +132,11 @@ fun Content(modifier: Modifier = Modifier) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-
-        Button(onClick = {
-            bitmap?.let { bmp ->
+        if (bitmap != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = {
                 resultText = "Procesando..."
-                val image = InputImage.fromBitmap(bmp, 0)
+                val image = InputImage.fromBitmap(bitmap, 0)
                 val labeler = ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS)
 
                 val options = TranslatorOptions.Builder()
@@ -165,9 +177,144 @@ fun Content(modifier: Modifier = Modifier) {
                     .addOnFailureListener {
                         resultText = "No se pudo descargar el modelo de traducción."
                     }
+            }) {
+                Text("Etiquetar imagen")
             }
-        }) {
-            Text("Etiquetar")
+        }
+
+
+        if (bitmap == null) {
+            Button(onClick = {
+                folderPickerLauncher.launch(null)
+            }) {
+                Text("Seleccionar carpeta")
+            }
+        }
+
+        if (folderUri != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = {
+                resultText = "Procesando imágenes..."
+
+                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                    folderUri,
+                    DocumentsContract.getTreeDocumentId(folderUri)
+                )
+
+                val options = TranslatorOptions.Builder()
+                    .setSourceLanguage(TranslateLanguage.ENGLISH)
+                    .setTargetLanguage(TranslateLanguage.SPANISH)
+                    .build()
+                val translator = Translation.getClient(options)
+
+                translator.downloadModelIfNeeded()
+                    .addOnSuccessListener {
+                        val labeler = ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS)
+                        val resultados = mutableListOf<String>()
+
+                        val cursor = contentResolver.query(childrenUri, arrayOf(
+                            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                            DocumentsContract.Document.COLUMN_MIME_TYPE
+                        ), null, null, null)
+
+                        val imagenUris = mutableListOf<Uri>()
+
+                        cursor?.use {
+                            while (it.moveToNext()) {
+                                val documentId = it.getString(0)
+                                val mimeType = it.getString(2)
+                                if (mimeType.startsWith("image/")) {
+                                    val docUri = DocumentsContract.buildDocumentUriUsingTree(folderUri, documentId)
+                                    imagenUris.add(docUri)
+                                }
+                            }
+                        }
+
+                        if (imagenUris.isEmpty()) {
+                            resultText = "No se encontraron imágenes."
+                            return@addOnSuccessListener
+                        }
+
+                        var procesadas = 0
+                        for (uri in imagenUris) {
+                            try {
+                                val inputStream = contentResolver.openInputStream(uri)
+                                val bmp = BitmapFactory.decodeStream(inputStream)
+                                inputStream?.close()
+                                val image = InputImage.fromBitmap(bmp, 0)
+
+                                labeler.process(image)
+                                    .addOnSuccessListener { labels ->
+                                        val traducciones = mutableListOf<String>()
+                                        var pendientes = labels.size
+                                        if (pendientes == 0) {
+                                            resultados.add("Imagen:\nSin etiquetas")
+                                            procesadas++
+                                            if (procesadas == imagenUris.size) {
+                                                resultText = resultados.joinToString("\n\n")
+                                            }
+                                        }
+
+                                        for (label in labels) {
+                                            translator.translate(label.text)
+                                                .addOnSuccessListener { traducido ->
+                                                    traducciones.add("$traducido: ${(label.confidence * 100).toInt()}%")
+                                                    pendientes--
+                                                    if (pendientes == 0) {
+                                                        resultados.add("Imagen:\n${traducciones.joinToString("\n")}")
+                                                        procesadas++
+                                                        if (procesadas == imagenUris.size) {
+                                                            resultText = resultados.joinToString("\n\n")
+                                                        }
+                                                    }
+                                                }
+                                                .addOnFailureListener {
+                                                    traducciones.add("${label.text}: ${(label.confidence * 100).toInt()}%")
+                                                    pendientes--
+                                                    if (pendientes == 0) {
+                                                        resultados.add("Imagen:\n${traducciones.joinToString("\n")}")
+                                                        procesadas++
+                                                        if (procesadas == imagenUris.size) {
+                                                            resultText = resultados.joinToString("\n\n")
+                                                        }
+                                                    }
+                                                }
+                                        }
+                                    }
+                                    .addOnFailureListener {
+                                        resultados.add("Imagen: Error al clasificar")
+                                        procesadas++
+                                        if (procesadas == imagenUris.size) {
+                                            resultText = resultados.joinToString("\n\n")
+                                        }
+                                    }
+                            } catch (e: Exception) {
+                                resultados.add("Error al abrir una imagen.")
+                                procesadas++
+                                if (procesadas == imagenUris.size) {
+                                    resultText = resultados.joinToString("\n\n")
+                                }
+                            }
+                        }
+                    }
+                    .addOnFailureListener {
+                        resultText = "Error al descargar el modelo de traducción."
+                    }
+            }) {
+                Text("Etiquetar carpeta seleccionada")
+            }
+        }
+
+        if (mode != "none") {
+            Button(onClick = {
+                mode = "none"
+                imageUri.value = null
+                folderUri = null
+                resultText = "Presiona el botón para clasificar."
+            }) {
+                Text("Cambiar selección")
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
