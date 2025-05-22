@@ -124,10 +124,13 @@ fun Content(modifier: Modifier = Modifier) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Button(onClick = {
-            launcher.launch("image/*")
-        }) {
-            Text("IMAGEN")
+        if (mode != "folder") {
+            Button(onClick = {
+                launcher.launch("image/*")
+                mode = "image"
+            }) {
+                Text("IMAGEN")
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -186,6 +189,7 @@ fun Content(modifier: Modifier = Modifier) {
         if (bitmap == null) {
             Button(onClick = {
                 folderPickerLauncher.launch(null)
+                mode = "folder"
             }) {
                 Text("Seleccionar carpeta")
             }
@@ -306,9 +310,10 @@ fun Content(modifier: Modifier = Modifier) {
             }
         }
 
+        // El botón que quieres que aparezca solo si mode != "none"
         if (mode != "none") {
             Button(onClick = {
-                mode = "none"
+                mode = "none"           // Al reiniciar, cambiar modo a none
                 imageUri.value = null
                 folderUri = null
                 resultText = "Presiona el botón para clasificar."
